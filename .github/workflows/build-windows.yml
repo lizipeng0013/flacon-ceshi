@@ -3,7 +3,7 @@ name: Build Flacon for Windows
 on:
   push:
     branches:
-      - master  # 或者你使用的其他分支
+      - main
   pull_request:
 
 jobs:
@@ -14,11 +14,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Setup Qt
-      uses: qt/qt-action@v1
-      with:
-        qt-version: '5.15'  # 选择你需要的 Qt 版本
-        target: 'win64'  # 目标平台
+    - name: Install Qt
+      run: |
+        choco install qt5 --version=5.15.2
+        set PATH=%PATH%;C:\Qt\5.15.2\msvc2019_64\bin
 
     - name: Install dependencies
       run: |
@@ -36,9 +35,9 @@ jobs:
       run: |
         mkdir release
         cp -r build/Release/* release/
-    
+
     - name: Upload Release Artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: flacon-release
         path: release/
