@@ -1,6 +1,9 @@
-name: Build AppImage
+name: Build Windows
 
-on: [push]
+on: 
+ push:
+    branches:
+      - main
 
 env:
   BUILD_TYPE: Release
