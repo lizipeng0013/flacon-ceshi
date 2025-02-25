@@ -1,53 +1,89 @@
-name: Build Flacon for Windows
+name: Build AppImage
 
-on:
-  push:
-    branches:
-      - master
-  pull_request:
+on: [push]
+
+env:
+  BUILD_TYPE: Release
+  PROGRAMS: alacenc faac flac lame mac oggenc opusenc sox ttaenc wavpack wvunpack
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Install Qt
+    - name: Set env
       run: |
-        choco install qt5 --version=5.15.2
-        set PATH=%PATH%;C:\Qt\5.15.2\msvc2019_64\bin
+        echo "RELEASE_DATE=$(date +%Y.%m.%d_%H.%M.%S)" >> $GITHUB_ENV
+        echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-    - name: Install dependencies
+        if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          echo APPIMAGE_NAME="flacon-${GITHUB_REF_NAME:1}-x86_64.AppImage" >> $GITHUB_ENV
+        else
+          echo APPIMAGE_NAME="flacon-$(date +%Y.%m.%d_%H.%M.%S)-x86_64.AppImage" >> $GITHUB_ENV
+        fi
+
+    - uses: actions/checkout@v3
+
+    - name: Install packages
       run: |
-        choco install mingw --version=8.1.0
-        choco install cmake
+        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+        choco install qt5
+        choco install mingw
+        choco install git
+        choco install make
 
-    - name: Build
+    - name: Create Build Environment
       run: |
-        mkdir build
-        cd build
-        cmake .. -G "Ninja"
-        cmake --build . --config Release
+        mkdir ${{github.workspace}}/build
+        mkdir ${{github.workspace}}/build/app
 
-    - name: Package
+    - name: Run CMake
+      working-directory: ${{github.workspace}}/build
+      run: cmake -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/build/app/usr -DAPPIMAGE_BUNDLE=Yes -DCMAKE_BUILD_TYPE=$BUILD_TYPE $GITHUB_WORKSPACE
+
+    - name: Build Flacon
+      working-directory: ${{github.workspace}}/build
+      run: mingw32-make -j 8
+
+    - name: Install Flacon
+      working-directory: ${{github.workspace}}/build
+      run: mingw32-make install
+
+    - name: Build AppImage dir
+      working-directory: ${{github.workspace}}/build/app
       run: |
-        mkdir release
-        cp -r build/Release/* release/
+        echo "= Create symlinks ============="
+        mklink AppRun usr/bin/flacon
+        mklink flacon.svg usr/share/icons/hicolor/scalable/apps/flacon.svg
+        mklink .DirIcon flacon.png
+        mklink flacon.desktop usr/share/applications/flacon.desktop
 
-    - name: Upload Release Artifacts
+        echo "= Add programs ================"
+        for prog in ${PROGRAMS}; do
+          echo " * Copy ${prog}"
+          src=$(where "$prog")
+          cp -f "${src}" "usr/bin/"
+        done
+
+        echo "= Build image ================="
+        linuxdeploy.exe --verbosity=3 --plugin qt --appdir "${{github.workspace}}/build/app"
+
+    - name: Check AppImage dir
+      run: |
+        bash ~/tools/appdir-lint.sh ${{github.workspace}}/build/app
+
+    - name: Check external programs
+      working-directory: ${{github.workspace}}
+      run: |
+        scripts/check-extprograms.sh . ${{github.workspace}}/build/app/usr/bin
+
+    - name: Build AppImage file
+      working-directory: ${{github.workspace}}/build/app
+      run: |
+        appimagetool.exe "${{github.workspace}}/build/app" "${{github.workspace}}/build/${{ env.APPIMAGE_NAME }}"
+
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: flacon-release
-        path: release/
-    - name: Rename directory
-      run: |
-        mv tests/data/testAudioFileMatcher/04_Multi_disc_=>_CueFile_1.ape tests/data/testAudioFileMatcher/04_Multi_disc_CueFile_1.ape
-    - name: Configure Git
-      run: |
-        git config --global core.longpaths true
-    - name: Run script
-      run: |
-        cd tests/data/testAudioFileMatcher
-        git add .
+        name: ${{ env.APPIMAGE_NAME }}
+        path: "${{github.workspace}}/build/${{ env.APPIMAGE_NAME }}"
