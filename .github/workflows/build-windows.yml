@@ -3,7 +3,7 @@ name: Build Flacon for Windows
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
 
 jobs:
