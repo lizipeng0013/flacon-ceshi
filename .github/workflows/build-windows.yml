@@ -41,3 +41,13 @@ jobs:
       with:
         name: flacon-release
         path: release/
+    - name: Rename directory
+      run: |
+        mv tests/data/testAudioFileMatcher/04_Multi_disc_=>_CueFile_1.ape tests/data/testAudioFileMatcher/04_Multi_disc_CueFile_1.ape
+    - name: Configure Git
+      run: |
+        git config --global core.longpaths true
+    - name: Run script
+      run: |
+        cd tests/data/testAudioFileMatcher
+        git add .
