@@ -1,0 +1,44 @@
+name: Build Flacon for Windows
+
+on:
+  push:
+    branches:
+      - main  # 或者你使用的其他分支
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Setup Qt
+      uses: qt/qt-action@v1
+      with:
+        qt-version: '5.15'  # 选择你需要的 Qt 版本
+        target: 'win64'  # 目标平台
+
+    - name: Install dependencies
+      run: |
+        choco install mingw --version=8.1.0
+        choco install cmake
+
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Ninja"
+        cmake --build . --config Release
+
+    - name: Package
+      run: |
+        mkdir release
+        cp -r build/Release/* release/
+    
+    - name: Upload Release Artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: flacon-release
+        path: release/
