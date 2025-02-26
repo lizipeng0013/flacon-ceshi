@@ -1,92 +1,77 @@
-name: Build Windows
+name: Windows Build
 
-on: 
- push:
-    branches:
-      - main
-
-env:
-  BUILD_TYPE: Release
-  PROGRAMS: alacenc faac flac lame mac oggenc opusenc sox ttaenc wavpack wvunpack
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
 
 jobs:
-  build:
+  build-windows:
+    name: Build for Windows
     runs-on: windows-latest
+    env:
+      VCPKG_DIR: ${{ github.workspace }}/vcpkg
 
     steps:
-    - name: Set env
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Qt
+      uses: jurplel/setup-qt-action@v2
+      with:
+        version: 6.5.3
+        dir: ${{ github.workspace }}/Qt
+        arch: win64_msvc2019_64
+        modules: qtbase qttools qt5compat
+
+    - name: Install build tools
       run: |
-        echo "RELEASE_DATE=$(date +%Y.%m.%d_%H.%M.%S)" >> $GITHUB_ENV
-        echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+        choco install -y ninja
 
-        if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-          echo APPIMAGE_NAME="flacon-${GITHUB_REF_NAME:1}-x86_64.AppImage" >> $GITHUB_ENV
-        else
-          echo APPIMAGE_NAME="flacon-$(date +%Y.%m.%d_%H.%M.%S)-x86_64.AppImage" >> $GITHUB_ENV
-        fi
-
-    - uses: actions/checkout@v3
-
-    - name: Install packages
+    - name: Setup vcpkg
       run: |
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-        choco install qt5
-        choco install mingw
-        choco install git
-        choco install make
+        git clone https://github.com/microsoft/vcpkg.git
+        & "${{ env.VCPKG_DIR }}/bootstrap-vcpkg.bat"
 
-    - name: Create Build Environment
+    - name: Install dependencies
       run: |
-        mkdir ${{github.workspace}}/build
-        mkdir ${{github.workspace}}/build/app
+        & "${{ env.VCPKG_DIR }}/vcpkg" install ^
+            flac ^
+            libsndfile ^
+            taglib ^
+            chromaprint
 
-    - name: Run CMake
-      working-directory: ${{github.workspace}}/build
-      run: cmake -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/build/app/usr -DAPPIMAGE_BUNDLE=Yes -DCMAKE_BUILD_TYPE=$BUILD_TYPE $GITHUB_WORKSPACE
-
-    - name: Build Flacon
-      working-directory: ${{github.workspace}}/build
-      run: mingw32-make -j 8
-
-    - name: Install Flacon
-      working-directory: ${{github.workspace}}/build
-      run: mingw32-make install
-
-    - name: Build AppImage dir
-      working-directory: ${{github.workspace}}/build/app
+    - name: Configure CMake
+      shell: cmd
       run: |
-        echo "= Create symlinks ============="
-        mklink AppRun usr/bin/flacon
-        mklink flacon.svg usr/share/icons/hicolor/scalable/apps/flacon.svg
-        mklink .DirIcon flacon.png
-        mklink flacon.desktop usr/share/applications/flacon.desktop
+        cmake -B build -S . ^
+          -G Ninja ^
+          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_DIR }}/scripts/buildsystems/vcpkg.cmake" ^
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/Qt/6.5.3/msvc2019_64" ^
+          -DCMAKE_BUILD_TYPE=Release
 
-        echo "= Add programs ================"
-        for prog in ${PROGRAMS}; do
-          echo " * Copy ${prog}"
-          src=$(where "$prog")
-          cp -f "${src}" "usr/bin/"
-        done
+    - name: Build project
+      run: cmake --build build --config Release --parallel
 
-        echo "= Build image ================="
-        linuxdeploy.exe --verbosity=3 --plugin qt --appdir "${{github.workspace}}/build/app"
-
-    - name: Check AppImage dir
+    - name: Deploy Qt libraries
       run: |
-        bash ~/tools/appdir-lint.sh ${{github.workspace}}/build/app
+        windeployqt ^
+          build/Release/flacon.exe ^
+          --release ^
+          --no-compiler-runtime ^
+          --dir build/deploy
 
-    - name: Check external programs
-      working-directory: ${{github.workspace}}
+    - name: Create portable package
+      shell: powershell
       run: |
-        scripts/check-extprograms.sh . ${{github.workspace}}/build/app/usr/bin
-
-    - name: Build AppImage file
-      working-directory: ${{github.workspace}}/build/app
-      run: |
-        appimagetool.exe "${{github.workspace}}/build/app" "${{github.workspace}}/build/${{ env.APPIMAGE_NAME }}"
+        Compress-Archive -Path build/deploy/* -DestinationPath flacon-portable.zip
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
-        name: ${{ env.APPIMAGE_NAME }}
-        path: "${{github.workspace}}/build/${{ env.APPIMAGE_NAME }}"
+        name: flacon-windows
+        path: flacon-portable.zip
