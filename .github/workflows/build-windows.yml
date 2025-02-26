@@ -6,13 +6,14 @@ on:
   pull_request:
     branches: [main, master]
 
+env:
+  VCPKG_DIR: ${{ github.workspace }}/vcpkg
+  QT_DIR: ${{ github.workspace }}/Qt/6.5.3/msvc2019_64
+
 jobs:
   build-windows:
     name: Build for Windows
     runs-on: windows-latest
-    env:
-      VCPKG_DIR: ${{ github.workspace }}/vcpkg
-      QT_DIR: ${{ github.workspace }}/Qt/6.5.3/msvc2019_64
 
     steps:
     - name: Checkout code
@@ -36,15 +37,18 @@ jobs:
         choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
         choco install -y ninja
 
-    - name: Setup vcpkg
+    - name: Cache vcpkg
       uses: actions/cache@v3
+      id: vcpkg-cache
       with:
-        path: vcpkg
+        path: ${{ env.VCPKG_DIR }}
         key: vcpkg-${{ hashFiles('vcpkg.json') }}
-      if: "!contains(runner.os, 'Windows')"
-      
+        restore-keys: vcpkg-
+
+    - name: Setup vcpkg
+      if: steps.vcpkg-cache.outputs.cache-hit != 'true'
       run: |
-        git clone https://github.com/microsoft/vcpkg.git
+        git clone https://github.com/microsoft/vcpkg.git ${{ env.VCPKG_DIR }}
         & "${{ env.VCPKG_DIR }}/bootstrap-vcpkg.bat"
 
     - name: Install dependencies
@@ -61,7 +65,7 @@ jobs:
         cmake -B build -S . ^
           -G Ninja ^
           -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_DIR }}/scripts/buildsystems/vcpkg.cmake" ^
-          -DCMAKE_PREFIX_PATH="${{ env.QT_DIR }" ^
+          -DCMAKE_PREFIX_PATH="${{ env.QT_DIR }}" ^
           -DCMAKE_BUILD_TYPE=Release
 
     - name: Build project
