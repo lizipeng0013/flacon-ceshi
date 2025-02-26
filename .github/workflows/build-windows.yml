@@ -16,18 +16,19 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Configure Git for Windows
+    - name: Configure Git
       run: |
-        # 允许长路径和特殊字符
+        # 禁用 cone 模式以支持复杂路径
+        git config --global core.sparseCheckoutCone false
         git config --global core.longpaths true
         git config --global core.protectNTFS false
 
-    - name: Checkout code (with path filter)
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
         sparse-checkout: |
-          /*
+          *
           !tests/data/testAudioFileMatcher/04_Multi_disc_=>_CueFile_1.ape
 
     - name: Setup Python
